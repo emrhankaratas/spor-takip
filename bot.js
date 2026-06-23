@@ -45,7 +45,7 @@ initDatabase().then(() => {
             const allUsers = await getAll('SELECT * FROM users');
             const keyboard = allUsers.map(u => [{ text: u.name, callback_data: `link_${u.id}` }]);
             bot.sendMessage(chatId,
-                '🏋️ *Kuzenler Spor Takip Botu*\n\nSen kimsin?',
+                '🏋️ *Spor Takip Botu*\n\nSen kimsin?',
                 { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }
             );
         }
@@ -89,7 +89,7 @@ initDatabase().then(() => {
             `📊 *Komutlar:*\n` +
             `/bugun — Bugünkü antrenmanın\n` +
             `/hafta — Haftalık özet\n` +
-            `/skor — Kuzenler liderlik tablosu\n` +
+            `/skor — Liderlik tablosu\n` +
             `/egzersizler — Egzersiz listesi\n` +
             `/sil — Son seti sil\n` +
             `/hesap — İstatistiklerin\n` +
@@ -101,7 +101,7 @@ initDatabase().then(() => {
     // ─── /site Komutu ──────────────────────────────────────────
     bot.onText(/\/site/, (msg) => {
         bot.sendMessage(msg.chat.id,
-            `🌐 *Kuzenler Spor Takip Sitesi*\n\nhttps://spor-takip-production.up.railway.app`,
+            `🌐 *Spor Takip Sitesi*\n\nhttps://spor-takip-production.up.railway.app`,
             { parse_mode: 'Markdown' }
         );
     });
@@ -165,7 +165,7 @@ initDatabase().then(() => {
     bot.onText(/\/skor|\/score|\/leaderboard/, async (msg) => {
         const leaderboard = await getLeaderboard();
         const medals = ['🥇', '🥈', '🥉'];
-        let message = `🏆 *Kuzenler Liderlik Tablosu*\n\n`;
+        let message = `🏆 *Liderlik Tablosu*\n\n`;
         leaderboard.forEach((entry, i) => {
             message += `${medals[i] || '  '} *${entry.name}*\n`;
             message += `   📅 ${entry.total_workouts} gün | 💪 ${entry.total_sets} set | ⚡ ${Math.round(entry.total_volume)}kg\n\n`;
