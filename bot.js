@@ -98,6 +98,14 @@ initDatabase().then(() => {
         );
     });
 
+    // ─── /site Komutu ──────────────────────────────────────────
+    bot.onText(/\/site/, (msg) => {
+        bot.sendMessage(msg.chat.id,
+            `🌐 *Kuzenler Spor Takip Sitesi*\n\nhttps://spor-takip-production.up.railway.app`,
+            { parse_mode: 'Markdown' }
+        );
+    });
+
     // ─── /bugun ────────────────────────────────────────────────
     bot.onText(/\/bugun|\/today/, async (msg) => {
         const chatId = msg.chat.id;
