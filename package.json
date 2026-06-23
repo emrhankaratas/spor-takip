@@ -1,0 +1,20 @@
+{
+  "name": "spor-takip",
+  "version": "1.0.0",
+  "description": "Kuzenler Spor Takip Botu",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "node-telegram-bot-api": "^0.66.0",
+    "sql.js": "^1.14.1",
+    "sqlite3": "^5.1.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
