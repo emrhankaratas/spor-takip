@@ -30,9 +30,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ─── API Routes ────────────────────────────────────────────────
 
 // Tüm kullanıcıları getir
-app.get('/api/users', (req, res) => {
+app.get('/api/users', async (req, res) => {
     try {
-        const users = getAll('SELECT * FROM users');
+        const users = await getAll('SELECT * FROM users');
         res.json(users);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -40,9 +40,9 @@ app.get('/api/users', (req, res) => {
 });
 
 // Tüm egzersizleri getir
-app.get('/api/exercises', (req, res) => {
+app.get('/api/exercises', async (req, res) => {
     try {
-        const exercises = getAll('SELECT * FROM exercises ORDER BY muscle_group, name');
+        const exercises = await getAll('SELECT * FROM exercises ORDER BY muscle_group, name');
         res.json(exercises);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -50,17 +50,17 @@ app.get('/api/exercises', (req, res) => {
 });
 
 // Yeni egzersiz ekle
-app.post('/api/exercises', (req, res) => {
+app.post('/api/exercises', async (req, res) => {
     try {
         const { name, aliases, category, muscle_group } = req.body;
         if (!name) return res.status(400).json({ error: 'Egzersiz adı gerekli' });
 
-        const result = runSql(
+        const result = await runSql(
             'INSERT INTO exercises (name, aliases, category, muscle_group) VALUES (?, ?, ?, ?)',
             [name, aliases || '', category || '', muscle_group || '']
         );
 
-        const exercise = getOne('SELECT * FROM exercises WHERE id = ?', [result.lastInsertRowid]);
+        const exercise = await getOne('SELECT * FROM exercises WHERE id = ?', [result.lastInsertRowid]);
         res.json(exercise);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -68,15 +68,15 @@ app.post('/api/exercises', (req, res) => {
 });
 
 // Bugünkü tüm antrenmanları getir
-app.get('/api/workouts/today', (req, res) => {
+app.get('/api/workouts/today', async (req, res) => {
     try {
-        const users = getAll('SELECT * FROM users');
+        const users = await getAll('SELECT * FROM users');
         const result = {};
 
         for (const user of users) {
             result[user.id] = {
                 user,
-                sets: getTodayWorkoutDetails(user.id)
+                sets: await getTodayWorkoutDetails(user.id)
             };
         }
 
@@ -87,11 +87,11 @@ app.get('/api/workouts/today', (req, res) => {
 });
 
 // Kullanıcının antrenman geçmişini getir
-app.get('/api/workouts/:userId', (req, res) => {
+app.get('/api/workouts/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
         const days = parseInt(req.query.days) || 30;
-        const history = getWorkoutHistory(parseInt(userId), days);
+        const history = await getWorkoutHistory(parseInt(userId), days);
         res.json(history);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -99,7 +99,7 @@ app.get('/api/workouts/:userId', (req, res) => {
 });
 
 // Yeni set ekle
-app.post('/api/workouts', (req, res) => {
+app.post('/api/workouts', async (req, res) => {
     try {
         const { user_id, exercise_id, reps, weight_kg } = req.body;
 
@@ -107,10 +107,10 @@ app.post('/api/workouts', (req, res) => {
             return res.status(400).json({ error: 'user_id, exercise_id ve reps gerekli' });
         }
 
-        const workout = getOrCreateTodayWorkout(parseInt(user_id));
-        const set = addSet(workout.id, parseInt(exercise_id), parseInt(reps), parseFloat(weight_kg) || 0);
+        const workout = await getOrCreateTodayWorkout(parseInt(user_id));
+        const set = await addSet(workout.id, parseInt(exercise_id), parseInt(reps), parseFloat(weight_kg) || 0);
 
-        const exercise = getOne('SELECT name FROM exercises WHERE id = ?', [parseInt(exercise_id)]);
+        const exercise = await getOne('SELECT name FROM exercises WHERE id = ?', [parseInt(exercise_id)]);
 
         res.json({
             ...set,
@@ -123,7 +123,7 @@ app.post('/api/workouts', (req, res) => {
 });
 
 // Toplu set ekle
-app.post('/api/workouts/bulk', (req, res) => {
+app.post('/api/workouts/bulk', async (req, res) => {
     try {
         const { user_id, sets } = req.body;
 
@@ -131,12 +131,12 @@ app.post('/api/workouts/bulk', (req, res) => {
             return res.status(400).json({ error: 'user_id ve sets dizisi gerekli' });
         }
 
-        const workout = getOrCreateTodayWorkout(parseInt(user_id));
+        const workout = await getOrCreateTodayWorkout(parseInt(user_id));
         const results = [];
 
         for (const s of sets) {
-            const set = addSet(workout.id, parseInt(s.exercise_id), parseInt(s.reps), parseFloat(s.weight_kg) || 0);
-            const exercise = getOne('SELECT name FROM exercises WHERE id = ?', [parseInt(s.exercise_id)]);
+            const set = await addSet(workout.id, parseInt(s.exercise_id), parseInt(s.reps), parseFloat(s.weight_kg) || 0);
+            const exercise = await getOne('SELECT name FROM exercises WHERE id = ?', [parseInt(s.exercise_id)]);
             results.push({
                 ...set,
                 exercise_name: exercise ? exercise.name : 'Bilinmeyen'
@@ -150,10 +150,10 @@ app.post('/api/workouts/bulk', (req, res) => {
 });
 
 // Set sil
-app.delete('/api/workouts/set/:setId', (req, res) => {
+app.delete('/api/workouts/set/:setId', async (req, res) => {
     try {
         const { setId } = req.params;
-        runSql('DELETE FROM workout_sets WHERE id = ?', [parseInt(setId)]);
+        await runSql('DELETE FROM workout_sets WHERE id = ?', [parseInt(setId)]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -161,9 +161,9 @@ app.delete('/api/workouts/set/:setId', (req, res) => {
 });
 
 // Kullanıcı istatistikleri
-app.get('/api/stats/:userId', (req, res) => {
+app.get('/api/stats/:userId', async (req, res) => {
     try {
-        const stats = getUserStats(parseInt(req.params.userId));
+        const stats = await getUserStats(parseInt(req.params.userId));
         res.json(stats);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -171,9 +171,9 @@ app.get('/api/stats/:userId', (req, res) => {
 });
 
 // Liderlik tablosu
-app.get('/api/leaderboard', (req, res) => {
+app.get('/api/leaderboard', async (req, res) => {
     try {
-        const leaderboard = getLeaderboard();
+        const leaderboard = await getLeaderboard();
         res.json(leaderboard);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -181,11 +181,11 @@ app.get('/api/leaderboard', (req, res) => {
 });
 
 // Egzersiz ilerleme
-app.get('/api/progress/:userId/:exerciseId', (req, res) => {
+app.get('/api/progress/:userId/:exerciseId', async (req, res) => {
     try {
         const { userId, exerciseId } = req.params;
         const days = parseInt(req.query.days) || 90;
-        const progress = getExerciseProgress(parseInt(userId), parseInt(exerciseId), days);
+        const progress = await getExerciseProgress(parseInt(userId), parseInt(exerciseId), days);
         res.json(progress);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -193,9 +193,9 @@ app.get('/api/progress/:userId/:exerciseId', (req, res) => {
 });
 
 // Haftalık özet
-app.get('/api/weekly/:userId', (req, res) => {
+app.get('/api/weekly/:userId', async (req, res) => {
     try {
-        const summary = getWeeklySummary(parseInt(req.params.userId));
+        const summary = await getWeeklySummary(parseInt(req.params.userId));
         res.json(summary);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -203,11 +203,11 @@ app.get('/api/weekly/:userId', (req, res) => {
 });
 
 // Antrenman takvimi
-app.get('/api/calendar/:userId', (req, res) => {
+app.get('/api/calendar/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
         const months = parseInt(req.query.months) || 3;
-        const data = getAll(`
+        const data = await getAll(`
             SELECT 
                 w.workout_date,
                 COUNT(ws.id) as set_count,
@@ -226,10 +226,10 @@ app.get('/api/calendar/:userId', (req, res) => {
 });
 
 // Belirli tarihteki antrenmanlar
-app.get('/api/workouts/:userId/date/:date', (req, res) => {
+app.get('/api/workouts/:userId/date/:date', async (req, res) => {
     try {
         const { userId, date } = req.params;
-        const data = getAll(`
+        const data = await getAll(`
             SELECT 
                 ws.id as set_id, ws.set_number, ws.reps, ws.weight_kg, ws.created_at,
                 e.name as exercise_name, e.muscle_group
