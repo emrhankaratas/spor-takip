@@ -5,7 +5,7 @@ const {
     initDatabase,
     getAll,
     runSql,
-    findExerciseByAlias,
+    getOrCreateExercise,
     getOrCreateTodayWorkout,
     addSet,
     getTodayWorkoutDetails,
@@ -45,7 +45,7 @@ initDatabase().then(() => {
             const allUsers = await getAll('SELECT * FROM users');
             const keyboard = allUsers.map(u => [{ text: u.name, callback_data: `link_${u.id}` }]);
             bot.sendMessage(chatId,
-                '🏋️ *Spor Takip Botu*\n\nSen kimsin?',
+                '🏋️ *Kuzenler Spor Takip Botu*\n\nSen kimsin?',
                 { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }
             );
         }
@@ -89,19 +89,11 @@ initDatabase().then(() => {
             `📊 *Komutlar:*\n` +
             `/bugun — Bugünkü antrenmanın\n` +
             `/hafta — Haftalık özet\n` +
-            `/skor — Liderlik tablosu\n` +
+            `/skor — Kuzenler liderlik tablosu\n` +
             `/egzersizler — Egzersiz listesi\n` +
             `/sil — Son seti sil\n` +
             `/hesap — İstatistiklerin\n` +
             `/yardim — Bu mesaj`,
-            { parse_mode: 'Markdown' }
-        );
-    });
-
-    // ─── /site Komutu ──────────────────────────────────────────
-    bot.onText(/\/site/, (msg) => {
-        bot.sendMessage(msg.chat.id,
-            `🌐 *Spor Takip Sitesi*\n\nhttps://spor-takip-production.up.railway.app`,
             { parse_mode: 'Markdown' }
         );
     });
@@ -165,7 +157,7 @@ initDatabase().then(() => {
     bot.onText(/\/skor|\/score|\/leaderboard/, async (msg) => {
         const leaderboard = await getLeaderboard();
         const medals = ['🥇', '🥈', '🥉'];
-        let message = `🏆 *Liderlik Tablosu*\n\n`;
+        let message = `🏆 *Kuzenler Liderlik Tablosu*\n\n`;
         leaderboard.forEach((entry, i) => {
             message += `${medals[i] || '  '} *${entry.name}*\n`;
             message += `   📅 ${entry.total_workouts} gün | 💪 ${entry.total_sets} set | ⚡ ${Math.round(entry.total_volume)}kg\n\n`;
@@ -254,15 +246,7 @@ initDatabase().then(() => {
         }
 
         const { exerciseName, weight, reps } = parsed;
-        const exercise = await findExerciseByAlias(exerciseName);
-
-        if (!exercise) {
-            bot.sendMessage(chatId,
-                `❌ "${exerciseName}" egzersizi bulunamadı.\n\n/egzersizler komutu ile listeye bak.`,
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
+        const exercise = await getOrCreateExercise(exerciseName);
 
         const workout = await getOrCreateTodayWorkout(user.id);
         const set = await addSet(workout.id, exercise.id, reps, weight);

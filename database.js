@@ -1,28 +1,13 @@
 require('dotenv').config();
-const initSqlJs = require('sql.js');
-const path = require('path');
-const fs = require('fs');
+const { createClient } = require('@libsql/client');
 
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const DB_PATH = path.join(dataDir, 'workouts.db');
-
-let db = null;
+const client = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN
+});
 
 async function initDatabase() {
-    const SQL = await initSqlJs();
-
-    if (fs.existsSync(DB_PATH)) {
-        const buffer = fs.readFileSync(DB_PATH);
-        db = new SQL.Database(buffer);
-    } else {
-        db = new SQL.Database();
-    }
-
-    db.run(`CREATE TABLE IF NOT EXISTS users (
+    await client.execute(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         telegram_chat_id TEXT,
@@ -30,7 +15,7 @@ async function initDatabase() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS exercises (
+    await client.execute(`CREATE TABLE IF NOT EXISTS exercises (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         aliases TEXT,
@@ -38,7 +23,7 @@ async function initDatabase() {
         muscle_group TEXT
     )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS workouts (
+    await client.execute(`CREATE TABLE IF NOT EXISTS workouts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         workout_date DATE NOT NULL,
@@ -47,7 +32,7 @@ async function initDatabase() {
         FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS workout_sets (
+    await client.execute(`CREATE TABLE IF NOT EXISTS workout_sets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         workout_id INTEGER NOT NULL,
         exercise_id INTEGER NOT NULL,
@@ -59,25 +44,23 @@ async function initDatabase() {
         FOREIGN KEY (exercise_id) REFERENCES exercises(id)
     )`);
 
-    const userCount = getOne('SELECT COUNT(*) as count FROM users').count;
-    if (userCount === 0) {
-        db.run("INSERT INTO users (name, avatar_color) VALUES ('Emirhan', '#00ff88')");
-        db.run("INSERT INTO users (name, avatar_color) VALUES ('Alikaan', '#00aaff')");
-        db.run("INSERT INTO users (name, avatar_color) VALUES ('Aykan', '#ff6b35')");
+    const userRow = await client.execute('SELECT COUNT(*) as count FROM users');
+    if (userRow.rows[0].count === 0) {
+        await client.execute("INSERT INTO users (name, avatar_color) VALUES ('Emirhan', '#00ff88')");
+        await client.execute("INSERT INTO users (name, avatar_color) VALUES ('Alikaan', '#00aaff')");
+        await client.execute("INSERT INTO users (name, avatar_color) VALUES ('Aykan', '#ff6b35')");
         console.log('✅ Kullanıcılar oluşturuldu: Emirhan, Alikaan, Aykan');
     }
 
-    const exerciseCount = getOne('SELECT COUNT(*) as count FROM exercises').count;
-    if (exerciseCount === 0) {
-        seedExercises();
+    const exRow = await client.execute('SELECT COUNT(*) as count FROM exercises');
+    if (exRow.rows[0].count === 0) {
+        await seedExercises();
     }
 
-    saveDatabase();
     console.log('✅ Veritabanı hazır');
-    return db;
 }
 
-function seedExercises() {
+async function seedExercises() {
     const exercises = [
         ['Bench Press', 'bench,bench press,göğüs press,bp', 'Compound', 'Göğüs'],
         ['Incline Bench Press', 'incline bench,incline press,incline,üst göğüs', 'Compound', 'Göğüs'],
@@ -134,48 +117,35 @@ function seedExercises() {
         ['Cable Crunch', 'cable crunch,kablo crunch', 'Core', 'Karın'],
     ];
 
-    const stmt = db.prepare('INSERT INTO exercises (name, aliases, category, muscle_group) VALUES (?, ?, ?, ?)');
     for (const [name, aliases, category, muscle] of exercises) {
-        stmt.run([name, aliases, category, muscle]);
+        await client.execute({
+            sql: 'INSERT INTO exercises (name, aliases, category, muscle_group) VALUES (?, ?, ?, ?)',
+            args: [name, aliases, category, muscle]
+        });
     }
-    stmt.free();
     console.log(`✅ ${exercises.length} egzersiz oluşturuldu`);
-    saveDatabase();
 }
 
-function getOne(sql, params = []) {
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    let result = null;
-    if (stmt.step()) result = stmt.getAsObject();
-    stmt.free();
-    return result;
+function saveDatabase() {} // Turso bulutta, kaydetmeye gerek yok
+
+async function getOne(sql, params = []) {
+    const result = await client.execute({ sql, args: params });
+    return result.rows[0] || null;
 }
 
-function getAll(sql, params = []) {
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    const results = [];
-    while (stmt.step()) results.push(stmt.getAsObject());
-    stmt.free();
-    return results;
+async function getAll(sql, params = []) {
+    const result = await client.execute({ sql, args: params });
+    return result.rows;
 }
 
-function runSql(sql, params = []) {
-    db.run(sql, params);
-    const rowid = db.exec('SELECT last_insert_rowid()')[0].values[0][0];
-    saveDatabase();
-    return { lastInsertRowid: rowid };
+async function runSql(sql, params = []) {
+    const result = await client.execute({ sql, args: params });
+    return { lastInsertRowid: result.lastInsertRowid };
 }
 
-function saveDatabase() {
-    const data = db.export();
-    fs.writeFileSync(DB_PATH, Buffer.from(data));
-}
-
-function findExerciseByAlias(searchTerm) {
+async function findExerciseByAlias(searchTerm) {
     const term = searchTerm.toLowerCase().trim();
-    const exercises = getAll('SELECT * FROM exercises');
+    const exercises = await getAll('SELECT * FROM exercises');
     for (const ex of exercises) {
         if (ex.name.toLowerCase() === term) return ex;
         const aliases = ex.aliases ? ex.aliases.split(',').map(a => a.trim().toLowerCase()) : [];
@@ -191,34 +161,34 @@ function findExerciseByAlias(searchTerm) {
     return null;
 }
 
-function getOrCreateTodayWorkout(userId) {
+async function getOrCreateTodayWorkout(userId) {
     const today = new Date().toISOString().split('T')[0];
-    let workout = getOne('SELECT * FROM workouts WHERE user_id = ? AND workout_date = ?', [userId, today]);
+    let workout = await getOne('SELECT * FROM workouts WHERE user_id = ? AND workout_date = ?', [userId, today]);
     if (!workout) {
-        const result = runSql('INSERT INTO workouts (user_id, workout_date) VALUES (?, ?)', [userId, today]);
-        workout = getOne('SELECT * FROM workouts WHERE id = ?', [result.lastInsertRowid]);
+        const result = await runSql('INSERT INTO workouts (user_id, workout_date) VALUES (?, ?)', [userId, today]);
+        workout = await getOne('SELECT * FROM workouts WHERE id = ?', [result.lastInsertRowid]);
     }
     return workout;
 }
 
-function getNextSetNumber(workoutId, exerciseId) {
-    const result = getOne(
+async function getNextSetNumber(workoutId, exerciseId) {
+    const result = await getOne(
         'SELECT MAX(set_number) as max_set FROM workout_sets WHERE workout_id = ? AND exercise_id = ?',
         [workoutId, exerciseId]
     );
-    return (result.max_set || 0) + 1;
+    return (result?.max_set || 0) + 1;
 }
 
-function addSet(workoutId, exerciseId, reps, weightKg) {
-    const setNumber = getNextSetNumber(workoutId, exerciseId);
-    const result = runSql(
+async function addSet(workoutId, exerciseId, reps, weightKg) {
+    const setNumber = await getNextSetNumber(workoutId, exerciseId);
+    const result = await runSql(
         'INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight_kg) VALUES (?, ?, ?, ?, ?)',
         [workoutId, exerciseId, setNumber, reps, weightKg]
     );
     return { id: result.lastInsertRowid, set_number: setNumber, reps, weight_kg: weightKg };
 }
 
-function getTodayWorkoutDetails(userId) {
+async function getTodayWorkoutDetails(userId) {
     const today = new Date().toISOString().split('T')[0];
     return getAll(`
         SELECT ws.id as set_id, ws.set_number, ws.reps, ws.weight_kg, ws.created_at,
@@ -231,7 +201,7 @@ function getTodayWorkoutDetails(userId) {
     `, [userId, today]);
 }
 
-function getWorkoutHistory(userId, days = 30) {
+async function getWorkoutHistory(userId, days = 30) {
     return getAll(`
         SELECT w.workout_date, e.name as exercise_name, e.muscle_group,
                ws.set_number, ws.reps, ws.weight_kg, ws.created_at
@@ -244,38 +214,31 @@ function getWorkoutHistory(userId, days = 30) {
     `, [userId, days]);
 }
 
-function getUserStats(userId) {
-    const totalWorkouts = getOne('SELECT COUNT(DISTINCT workout_date) as count FROM workouts WHERE user_id = ?', [userId]).count;
-    const totalSets = getOne('SELECT COUNT(*) as count FROM workout_sets ws JOIN workouts w ON ws.workout_id = w.id WHERE w.user_id = ?', [userId]).count;
-    const totalVolume = getOne('SELECT COALESCE(SUM(ws.reps * ws.weight_kg), 0) as volume FROM workout_sets ws JOIN workouts w ON ws.workout_id = w.id WHERE w.user_id = ?', [userId]).volume;
-    const workoutDates = getAll('SELECT DISTINCT workout_date FROM workouts w JOIN workout_sets ws ON w.id = ws.workout_id WHERE w.user_id = ? ORDER BY workout_date DESC', [userId]);
+async function getUserStats(userId) {
+    const r1 = await getOne('SELECT COUNT(DISTINCT workout_date) as count FROM workouts WHERE user_id = ?', [userId]);
+    const r2 = await getOne('SELECT COUNT(*) as count FROM workout_sets ws JOIN workouts w ON ws.workout_id = w.id WHERE w.user_id = ?', [userId]);
+    const r3 = await getOne('SELECT COALESCE(SUM(ws.reps * ws.weight_kg), 0) as volume FROM workout_sets ws JOIN workouts w ON ws.workout_id = w.id WHERE w.user_id = ?', [userId]);
+    const r4 = await getOne('SELECT e.name, COUNT(*) as count FROM workout_sets ws JOIN workouts w ON ws.workout_id = w.id JOIN exercises e ON ws.exercise_id = e.id WHERE w.user_id = ? GROUP BY e.id ORDER BY count DESC LIMIT 1', [userId]);
+    const r5 = await getOne("SELECT COUNT(DISTINCT workout_date) as count FROM workouts w JOIN workout_sets ws ON w.id = ws.workout_id WHERE w.user_id = ? AND w.workout_date >= date('now', 'weekday 0', '-7 days')", [userId]);
+    const dates = await getAll('SELECT DISTINCT workout_date FROM workouts w JOIN workout_sets ws ON w.id = ws.workout_id WHERE w.user_id = ? ORDER BY workout_date DESC', [userId]);
 
     let streak = 0;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    for (let i = 0; i < workoutDates.length; i++) {
+    for (let i = 0; i < dates.length; i++) {
         const expected = new Date(today);
         expected.setDate(expected.getDate() - i);
-        if (workoutDates[i].workout_date === expected.toISOString().split('T')[0]) streak++;
+        if (dates[i].workout_date === expected.toISOString().split('T')[0]) streak++;
         else break;
     }
 
-    const favoriteExercise = getOne(`
-        SELECT e.name, COUNT(*) as count FROM workout_sets ws
-        JOIN workouts w ON ws.workout_id = w.id
-        JOIN exercises e ON ws.exercise_id = e.id
-        WHERE w.user_id = ? GROUP BY e.id ORDER BY count DESC LIMIT 1
-    `, [userId]);
-
-    const thisWeekWorkouts = getOne(`
-        SELECT COUNT(DISTINCT workout_date) as count FROM workouts w
-        JOIN workout_sets ws ON w.id = ws.workout_id
-        WHERE w.user_id = ? AND w.workout_date >= date('now', 'weekday 0', '-7 days')
-    `, [userId]).count;
-
-    return { totalWorkouts, totalSets, totalVolume: Math.round(totalVolume), streak, favoriteExercise: favoriteExercise ? favoriteExercise.name : '-', thisWeekWorkouts };
+    return {
+        totalWorkouts: r1.count, totalSets: r2.count,
+        totalVolume: Math.round(r3.volume), streak,
+        favoriteExercise: r4 ? r4.name : '-', thisWeekWorkouts: r5.count
+    };
 }
 
-function getLeaderboard() {
+async function getLeaderboard() {
     return getAll(`
         SELECT u.id, u.name, u.avatar_color,
                COUNT(DISTINCT w.workout_date) as total_workouts,
@@ -288,7 +251,7 @@ function getLeaderboard() {
     `);
 }
 
-function getExerciseProgress(userId, exerciseId, days = 90) {
+async function getExerciseProgress(userId, exerciseId, days = 90) {
     return getAll(`
         SELECT w.workout_date, MAX(ws.weight_kg) as max_weight,
                MAX(ws.reps) as max_reps, SUM(ws.reps * ws.weight_kg) as total_volume
@@ -300,15 +263,7 @@ function getExerciseProgress(userId, exerciseId, days = 90) {
     `, [userId, exerciseId, days]);
 }
 
-function getUserByChatId(chatId) {
-    return getOne('SELECT * FROM users WHERE telegram_chat_id = ?', [String(chatId)]);
-}
-
-function linkTelegramUser(userId, chatId) {
-    runSql('UPDATE users SET telegram_chat_id = ? WHERE id = ?', [String(chatId), userId]);
-}
-
-function getWeeklySummary(userId) {
+async function getWeeklySummary(userId) {
     return getAll(`
         SELECT w.workout_date, COUNT(ws.id) as set_count,
                COALESCE(SUM(ws.reps * ws.weight_kg), 0) as daily_volume
@@ -319,9 +274,31 @@ function getWeeklySummary(userId) {
     `, [userId]);
 }
 
+async function getUserByChatId(chatId) {
+    return getOne('SELECT * FROM users WHERE telegram_chat_id = ?', [String(chatId)]);
+}
+
+async function linkTelegramUser(userId, chatId) {
+    return runSql('UPDATE users SET telegram_chat_id = ? WHERE id = ?', [String(chatId), userId]);
+}
+
 module.exports = {
     initDatabase, getOne, getAll, runSql, saveDatabase,
     findExerciseByAlias, getOrCreateTodayWorkout, getNextSetNumber,
     addSet, getTodayWorkoutDetails, getWorkoutHistory, getUserStats,
-    getLeaderboard, getExerciseProgress, getUserByChatId, linkTelegramUser, getWeeklySummary
+    getLeaderboard, getExerciseProgress, getWeeklySummary,
+    getUserByChatId, linkTelegramUser, getOrCreateExercise
 };
+
+async function getOrCreateExercise(name) {
+    // Önce tam eşleşme ara
+    let exercise = await getOne('SELECT * FROM exercises WHERE LOWER(name) = LOWER(?)', [name]);
+    if (exercise) return exercise;
+
+    // Yoksa yeni oluştur
+    const result = await runSql(
+        'INSERT INTO exercises (name, aliases, category, muscle_group) VALUES (?, ?, ?, ?)',
+        [name, '', 'Custom', 'Diğer']
+    );
+    return await getOne('SELECT * FROM exercises WHERE id = ?', [result.lastInsertRowid]);
+}
