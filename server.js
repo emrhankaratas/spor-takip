@@ -272,6 +272,31 @@ async function start() {
     });
 }
 
+// ─── GEÇİCİ: Eski DB dosyasını indirmek için ────────────────────
+const fs = require('fs');
+app.get('/download-old-db', (req, res) => {
+    const dbPath = path.join(__dirname, 'data', 'workouts.db');
+    if (fs.existsSync(dbPath)) {
+        res.download(dbPath, 'workouts.db');
+    } else {
+        res.status(404).json({ error: 'workouts.db bulunamadı' });
+    }
+});
+
+app.get('/download-old-db-base64', (req, res) => {
+    const dbPath = path.join(__dirname, 'data', 'workouts.db');
+    if (fs.existsSync(dbPath)) {
+        const data = fs.readFileSync(dbPath);
+        res.json({ 
+            size: data.length,
+            base64: data.toString('base64')
+        });
+    } else {
+        res.status(404).json({ error: 'workouts.db bulunamadı' });
+    }
+});
+// ──────────────────────────────────────────────────────────────────
+
 start().catch(err => {
     console.error('Başlatma hatası:', err);
     process.exit(1);
